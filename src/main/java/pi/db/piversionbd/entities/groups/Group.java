@@ -1,5 +1,6 @@
 package pi.db.piversionbd.entities.groups;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import lombok.Data;
 import pi.db.piversionbd.entities.admin.PlatformKpiSnapshot;
@@ -8,8 +9,9 @@ import pi.db.piversionbd.entities.score.Claim;
 import java.util.List;
 
 @Entity
-@Table(name = "GROUPS")
+@Table(name = "groups")
 @Data
+@Schema(hidden = true) // only GroupDto is used in API; avoid schema generation issues
 public class Group {
 
     @Id
