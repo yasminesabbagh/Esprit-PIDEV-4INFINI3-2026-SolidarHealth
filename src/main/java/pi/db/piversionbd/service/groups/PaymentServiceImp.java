@@ -3,15 +3,18 @@ package pi.db.piversionbd.service.groups;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pi.db.piversionbd.entities.admin.SystemAlert;
 import pi.db.piversionbd.entities.groups.Group;
 import pi.db.piversionbd.entities.groups.GroupPool;
 import pi.db.piversionbd.entities.groups.Membership;
 import pi.db.piversionbd.entities.groups.Payment;
 import pi.db.piversionbd.exception.ResourceNotFoundException;
+import pi.db.piversionbd.repository.admin.SystemAlertRepository;
 import pi.db.piversionbd.repository.groups.GroupPoolRepository;
 import pi.db.piversionbd.repository.groups.PaymentRepository;
 import pi.db.piversionbd.repository.groups.MembershipRepository;
 
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -23,23 +26,33 @@ public class PaymentServiceImp implements IPaymentService {
     private final GroupPoolRepository groupPoolRepository;
     private final MembershipRepository membershipRepository;
     private final IMembershipService membershipService;
+    private final SystemAlertRepository systemAlertRepository;
+
+    private static final float POOL_RATIO = 0.7f;
+    private static final float PLATFORM_RATIO = 0.2f;
+    private static final float NATIONAL_RATIO = 0.1f;
 
     @Override
-    public Membership recordSuccessfulPayment(Long membershipId, Float amount, Float poolAllocation, Float platformFee, Float nationalFund) {
+    public Membership recordSuccessfulPayment(Long membershipId) {
         Membership membership = membershipRepository.findById(membershipId)
                 .orElseThrow(() -> new ResourceNotFoundException("Membership not found with id " + membershipId));
-        if (amount == null || amount <= 0) {
-            throw new IllegalArgumentException("Amount must be positive");
+        Float monthlyAmount = membership.getMonthlyAmount();
+        if (monthlyAmount == null || monthlyAmount <= 0) {
+            throw new IllegalArgumentException("Membership has no monthly amount set (check package and member prices)");
         }
+        float amount = monthlyAmount;
+        float poolAllocation = amount * POOL_RATIO;
+        float platformFee = amount * PLATFORM_RATIO;
+        float nationalFund = amount * NATIONAL_RATIO;
 
         // Create payment record
         Payment payment = new Payment();
         payment.setMember(membership.getMember());
         payment.setGroup(membership.getGroup());
         payment.setAmount(amount);
-        payment.setPoolAllocation(poolAllocation != null ? poolAllocation : 0f);
-        payment.setPlatformFee(platformFee != null ? platformFee : 0f);
-        payment.setNationalFund(nationalFund != null ? nationalFund : 0f);
+        payment.setPoolAllocation(poolAllocation);
+        payment.setPlatformFee(platformFee);
+        payment.setNationalFund(nationalFund);
         payment = paymentRepository.save(payment);
 
         // Update group pool: get or create pool for this group
@@ -53,10 +66,12 @@ public class PaymentServiceImp implements IPaymentService {
                     p.setTotalPaidOut(0f);
                     return groupPoolRepository.save(p);
                 });
-        float addToPool = payment.getPoolAllocation() != null ? payment.getPoolAllocation() : 0f;
+        float addToPool = payment.getPoolAllocation();
         pool.setPoolBalance((pool.getPoolBalance() != null ? pool.getPoolBalance() : 0f) + addToPool);
         pool.setTotalContributions((pool.getTotalContributions() != null ? pool.getTotalContributions() : 0f) + addToPool);
+        pool.setUpdatedAt(Instant.now());
         groupPoolRepository.save(pool);
+        notifyLowPoolIfNeeded(pool, group);
 
         // Set membership to active
         Membership updated = membershipService.updateMembershipStatus(membershipId, Membership.STATUS_ACTIVE);
@@ -64,29 +79,20 @@ public class PaymentServiceImp implements IPaymentService {
         return updated;
     }
 
-    private static final float POOL_RATIO = 0.7f;
-    private static final float PLATFORM_RATIO = 0.2f;
-    private static final float NATIONAL_RATIO = 0.1f;
-    /** Tolerance for amount vs monthly amount (e.g. rounding). */
-    private static final float AMOUNT_TOLERANCE = 0.01f;
-
     @Override
-    public Payment processMonthlyPayment(Long memberId, Long groupId, Float amount) {
+    public Payment processMonthlyPayment(Long memberId, Long groupId) {
         if (memberId == null || groupId == null) {
             throw new IllegalArgumentException("memberId and groupId are required");
-        }
-        if (amount == null || amount <= 0) {
-            throw new IllegalArgumentException("Amount must be positive");
         }
         Membership membership = membershipRepository
                 .findByMember_IdAndGroup_IdAndEndedAtIsNull(memberId, groupId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No active membership found for member " + memberId + " in group " + groupId));
         Float monthlyAmount = membership.getMonthlyAmount();
-        if (monthlyAmount != null && Math.abs(amount - monthlyAmount) > AMOUNT_TOLERANCE) {
-            throw new IllegalArgumentException(
-                    "Amount " + amount + " does not match membership monthly amount " + monthlyAmount);
+        if (monthlyAmount == null || monthlyAmount <= 0) {
+            throw new IllegalArgumentException("Membership has no monthly amount set (check package and member prices)");
         }
+        float amount = monthlyAmount;
         float poolAllocation = amount * POOL_RATIO;
         float platformFee = amount * PLATFORM_RATIO;
         float nationalFund = amount * NATIONAL_RATIO;
@@ -112,12 +118,43 @@ public class PaymentServiceImp implements IPaymentService {
                 });
         pool.setPoolBalance((pool.getPoolBalance() != null ? pool.getPoolBalance() : 0f) + poolAllocation);
         pool.setTotalContributions((pool.getTotalContributions() != null ? pool.getTotalContributions() : 0f) + poolAllocation);
+        pool.setUpdatedAt(Instant.now());
         groupPoolRepository.save(pool);
+        notifyLowPoolIfNeeded(pool, group);
 
         if (Membership.STATUS_PENDING.equals(membership.getStatus())) {
             membershipService.updateMembershipStatus(membership.getId(), Membership.STATUS_ACTIVE);
         }
         return payment;
+    }
+
+    /** Create a system alert when the group pool is low (≤20% of contributions). At most one active LOW_POOL alert per group. */
+    private void notifyLowPoolIfNeeded(GroupPool pool, Group group) {
+        if (group == null || pool == null || !pool.isLowBalance()) {
+            return;
+        }
+        Long groupId = group.getId();
+        if (groupId == null) return;
+        boolean alreadyAlerted = systemAlertRepository
+                .findByAlertTypeAndSourceEntityTypeAndSourceEntityIdAndActive(
+                        "LOW_POOL", "GROUP", groupId, true)
+                .isPresent();
+        if (alreadyAlerted) {
+            return;
+        }
+        float balance = pool.getPoolBalance() != null ? pool.getPoolBalance() : 0f;
+        float contributions = pool.getTotalContributions() != null ? pool.getTotalContributions() : 0f;
+        SystemAlert alert = new SystemAlert();
+        alert.setAlertType("LOW_POOL");
+        alert.setSeverity("high");
+        alert.setRegion(group.getRegion());
+        alert.setTitle("Group solidarity pool low");
+        alert.setMessage(String.format("Group \"%s\" (id=%d) has a low pool balance: %.2f DT (total contributions: %.2f DT). Consider alerting the group or reviewing claims.",
+                group.getName() != null ? group.getName() : "—", groupId, balance, contributions));
+        alert.setActive(true);
+        alert.setSourceEntityType("GROUP");
+        alert.setSourceEntityId(groupId);
+        systemAlertRepository.save(alert);
     }
 
     @Override

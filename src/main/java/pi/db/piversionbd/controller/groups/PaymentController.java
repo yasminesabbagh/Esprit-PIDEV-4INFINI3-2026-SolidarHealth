@@ -30,21 +30,18 @@ public class PaymentController {
     @PostMapping
     @Operation(
             summary = "Process monthly premium payment",
-            description = "Verify member is in group; amount should match membership's monthly amount. Splits: pool 70%, platform 20%, national fund 10%. Creates payment record and updates group pool.")
+            description = "Uses the membership's monthly amount (from the member's chosen package: BASIC, CONFORT, PREMIUM). Splits: pool 70%, platform 20%, national fund 10%. Creates payment record and updates group pool. No amount in body — taken from membership.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Payment processed, confirmation returned"),
-            @ApiResponse(responseCode = "400", description = "Invalid request or amount does not match monthly amount", content = @Content(mediaType = "text/plain")),
+            @ApiResponse(responseCode = "400", description = "Invalid request or membership has no monthly amount", content = @Content(mediaType = "text/plain")),
             @ApiResponse(responseCode = "404", description = "Member or membership not found", content = @Content(mediaType = "text/plain", schema = @Schema(example = "No active membership found for member 1 in group 2")))
     })
     public ResponseEntity<GroupsModuleDto.PaymentDto> processMonthlyPayment(
             @RequestBody GroupsModuleDto.MonthlyPaymentRequest body) {
-        if (body == null || body.getMemberId() == null || body.getGroupId() == null || body.getAmount() == null) {
+        if (body == null || body.getMemberId() == null || body.getGroupId() == null) {
             return ResponseEntity.badRequest().build();
         }
-        Payment payment = paymentService.processMonthlyPayment(
-                body.getMemberId(),
-                body.getGroupId(),
-                body.getAmount());
+        Payment payment = paymentService.processMonthlyPayment(body.getMemberId(), body.getGroupId());
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupsModuleDto.PaymentDto.fromEntity(payment));
     }
 
@@ -66,24 +63,15 @@ public class PaymentController {
     @PostMapping("/memberships/{membershipId}")
     @Operation(
             summary = "Record successful payment (activate membership)",
-            description = "On successful first payment: creates the payment record, updates the group pool, and sets the membership status to active. Call this after the payment gateway confirms payment.")
+            description = "Uses the membership's monthly amount (from the member's chosen package: BASIC, CONFORT, PREMIUM). Applies 70% pool, 20% platform, 10% national fund. Creates payment record, updates group pool, sets membership to active. No body required — amount is taken from membership.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Payment recorded and membership activated"),
-            @ApiResponse(responseCode = "400", description = "Invalid request (e.g. amount missing or not positive)", content = @Content(mediaType = "text/plain")),
+            @ApiResponse(responseCode = "400", description = "Membership has no monthly amount set", content = @Content(mediaType = "text/plain")),
             @ApiResponse(responseCode = "404", description = "Membership not found", content = @Content(mediaType = "text/plain", schema = @Schema(example = "Membership not found with id 99")))
     })
     public ResponseEntity<GroupsModuleDto.MembershipDto> recordPayment(
-            @Parameter(description = "Membership ID. Placeholder: 1", required = true, schema = @Schema(example = "1")) @PathVariable Long membershipId,
-            @RequestBody GroupsModuleDto.RecordPaymentRequest body) {
-        if (body == null || body.getAmount() == null) {
-            return ResponseEntity.badRequest().build();
-        }
-        Membership membership = paymentService.recordSuccessfulPayment(
-                membershipId,
-                body.getAmount(),
-                body.getPoolAllocation(),
-                body.getPlatformFee(),
-                body.getNationalFund());
+            @Parameter(description = "Membership ID. Placeholder: 1", required = true, schema = @Schema(example = "1")) @PathVariable Long membershipId) {
+        Membership membership = paymentService.recordSuccessfulPayment(membershipId);
         return ResponseEntity.ok(GroupsModuleDto.MembershipDto.fromEntity(membership));
     }
 }

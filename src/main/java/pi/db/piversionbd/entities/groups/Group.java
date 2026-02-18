@@ -22,6 +22,17 @@ public class Group {
     private String type;
     private String region;
 
+    /**
+     * public: anyone can request membership by selecting the group.
+     * private: membership requires an invite_code (QR code) shared by the creator.
+     */
+    @Column(name = "join_policy", length = 10)
+    private String joinPolicy; // public | private
+
+    /** Invite code for private groups only (nullable for public groups). */
+    @Column(name = "invite_code", length = 64, unique = true)
+    private String inviteCode;
+
     @Column(name = "min_members")
     private Integer minMembers;
 

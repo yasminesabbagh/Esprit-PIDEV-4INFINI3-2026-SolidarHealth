@@ -24,5 +24,13 @@ public class SystemAlert {
 
     @Column(name = "is_active")
     private Boolean active;
+
+    /** Source entity type for linking (e.g. GROUP_CHANGE_REQUEST, GROUP). */
+    @Column(name = "source_entity_type", length = 64)
+    private String sourceEntityType;
+
+    /** Source entity ID (e.g. request id, group id). */
+    @Column(name = "source_entity_id")
+    private Long sourceEntityId;
 }
 

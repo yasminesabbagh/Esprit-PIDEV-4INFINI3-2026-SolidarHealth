@@ -39,6 +39,15 @@ public final class GroupsModuleDto {
         @Schema(description = "Region / city. Placeholder: Tunis", example = "Tunis")
         private String region;
 
+        @Schema(description = "Join policy: public or private. Private groups require an invite code (QR).", example = "public", allowableValues = { "public", "private" })
+        private String joinPolicy;
+
+        @Schema(description = "Invite code for private groups (returned on creation so creator can share). Null for public groups.", example = "a1b2c3d4e5f6")
+        private String inviteCode;
+
+        @Schema(description = "Creator member ID (if known).", example = "1")
+        private Long createdByMemberId;
+
         @Schema(description = "Minimum members. Placeholder: 5", example = "5", minimum = "5", maximum = "30")
         private Integer minMembers;
 
@@ -55,11 +64,67 @@ public final class GroupsModuleDto {
                     g.getName(),
                     g.getType(),
                     g.getRegion(),
+                    g.getJoinPolicy(),
+                    g.getInviteCode(),
+                    g.getCreator() != null ? g.getCreator().getId() : null,
                     g.getMinMembers(),
                     g.getMaxMembers(),
                     g.getCurrentMemberCount()
             );
         }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "Create group request (public or private). For private groups, inviteCode is generated and returned.")
+    public static class CreateGroupRequest {
+
+        @Schema(description = "Group name", example = "My Family Group", requiredMode = Schema.RequiredMode.REQUIRED)
+        private String name;
+
+        @Schema(description = "Group type", example = "FAMILY", allowableValues = { "FAMILY", "STUDENTS", "WORKERS", "MIXED" })
+        private String type;
+
+        @Schema(description = "Region", example = "Tunis")
+        private String region;
+
+        @Schema(description = "Minimum members", example = "2")
+        private Integer minMembers;
+
+        @Schema(description = "Maximum members", example = "10")
+        private Integer maxMembers;
+
+        @Schema(description = "Join policy: public or private", example = "private", allowableValues = { "public", "private" })
+        private String joinPolicy;
+
+        @Schema(description = "Creator member ID (until auth is added).", example = "1")
+        private Long creatorMemberId;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "Update group request. currentMemberCount is not updatable.")
+    public static class UpdateGroupRequest {
+
+        @Schema(description = "Group name", example = "My Family Group")
+        private String name;
+
+        @Schema(description = "Group type", example = "FAMILY", allowableValues = { "FAMILY", "STUDENTS", "WORKERS", "MIXED" })
+        private String type;
+
+        @Schema(description = "Region", example = "Tunis")
+        private String region;
+
+        @Schema(description = "Minimum members", example = "2")
+        private Integer minMembers;
+
+        @Schema(description = "Maximum members", example = "10")
+        private Integer maxMembers;
+
+        @Schema(description = "Join policy: public or private", example = "private", allowableValues = { "public", "private" })
+        private String joinPolicy;
     }
 
     // ----- Member -----
@@ -144,13 +209,9 @@ public final class GroupsModuleDto {
         @Schema(description = "Status: pending, active, suspended, cancelled. Pending until first payment.", example = "pending", allowableValues = { "pending", "active", "suspended", "cancelled" })
         private String status;
 
-        @Schema(description = "Active (status=active and not ended). Placeholder: true", example = "true")
-        private Boolean active;
-
         public static MembershipDto fromEntity(Membership m) {
             if (m == null) return null;
             String status = m.getStatus() != null ? m.getStatus() : Membership.STATUS_PENDING;
-            boolean active = Membership.STATUS_ACTIVE.equals(status) && m.getEndedAt() == null;
             return new MembershipDto(
                     m.getId(),
                     m.getMember() != null ? m.getMember().getId() : null,
@@ -159,8 +220,7 @@ public final class GroupsModuleDto {
                     m.getMonthlyAmount(),
                     m.getConsultationsLimit(),
                     m.getAnnualLimit(),
-                    status,
-                    active
+                    status
             );
         }
     }
@@ -180,19 +240,19 @@ public final class GroupsModuleDto {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    @Schema(description = "Record a successful payment: creates payment record, updates group pool, sets membership to active.")
+    @Schema(description = "Deprecated: first payment now uses membership's monthly amount (package BASIC/CONFORT/PREMIUM). POST /api/payments/memberships/{id} requires no body.")
     public static class RecordPaymentRequest {
 
-        @Schema(description = "Total amount paid (DT). Placeholder: 17.5", example = "17.5", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "No longer used; amount is taken from membership.", deprecated = true)
         private Float amount;
 
-        @Schema(description = "Amount allocated to group pool (DT). Placeholder: 15.0", example = "15.0")
+        @Schema(description = "No longer used; 70/20/10 split is applied server-side.", deprecated = true)
         private Float poolAllocation;
 
-        @Schema(description = "Platform fee (DT). Placeholder: 1.5", example = "1.5")
+        @Schema(description = "No longer used.", deprecated = true)
         private Float platformFee;
 
-        @Schema(description = "National fund contribution (DT). Placeholder: 1.0", example = "1.0")
+        @Schema(description = "No longer used.", deprecated = true)
         private Float nationalFund;
     }
 
@@ -201,7 +261,7 @@ public final class GroupsModuleDto {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    @Schema(description = "Process a monthly premium payment. Amount should match the membership's monthly amount.")
+    @Schema(description = "Process a monthly premium payment. Amount is taken from the membership (member's chosen package: BASIC, CONFORT, PREMIUM).")
     public static class MonthlyPaymentRequest {
 
         @Schema(description = "Member ID. Placeholder: 1", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -209,9 +269,6 @@ public final class GroupsModuleDto {
 
         @Schema(description = "Group ID. Placeholder: 1", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         private Long groupId;
-
-        @Schema(description = "Payment amount (DT). Should match membership monthly amount. Placeholder: 17.5", example = "17.5", requiredMode = Schema.RequiredMode.REQUIRED)
-        private Float amount;
     }
 
     @Data
@@ -251,6 +308,123 @@ public final class GroupsModuleDto {
                     p.getPoolAllocation(),
                     p.getPlatformFee(),
                     p.getNationalFund()
+            );
+        }
+    }
+
+    // ----- Alerts (coverage & pool) -----
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "Coverage alerts for a membership: flags indicating if the member is close to their annual or consultations limit.")
+    public static class CoverageAlertsDto {
+
+        @Schema(description = "Membership ID.", example = "1")
+        private Long membershipId;
+
+        @Schema(description = "True if used amount this year is close to annual_limit (e.g. ≥ 80%).", example = "false")
+        private Boolean closeToAnnualLimit;
+
+        @Schema(description = "True if used consultations are close to consultations_limit (e.g. ≥ 80%).", example = "false")
+        private Boolean closeToConsultationsLimit;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "Alert status for a group pool (used by admin dashboards).")
+    public static class GroupPoolAlertDto {
+
+        @Schema(description = "Group ID.", example = "1")
+        private Long groupId;
+
+        @Schema(description = "True if pool balance is low compared to total contributions (e.g. ≤ 20%).", example = "false")
+        private Boolean lowBalance;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "Group pool: exact balance, total contributions, and when it was last updated (e.g. when a payment was applied).")
+    public static class GroupPoolDto {
+
+        @Schema(description = "Group ID.", example = "1")
+        private Long groupId;
+
+        @Schema(description = "Current pool balance (DT). Amount available in the solidarity fund.", example = "122.50")
+        private Float poolBalance;
+
+        @Schema(description = "Total contributions so far (DT). Sum of all pool allocations from payments.", example = "500.00")
+        private Float totalContributions;
+
+        @Schema(description = "Total paid out (DT). Amount withdrawn from pool for claims.", example = "0")
+        private Float totalPaidOut;
+
+        @Schema(description = "Last time the pool was updated (e.g. when a payment was recorded). Null if no payment yet.", example = "2025-02-15T14:30:00Z")
+        private java.time.Instant updatedAt;
+
+        @Schema(description = "True if pool balance is low (≤ 20% of total contributions).", example = "false")
+        private Boolean lowBalance;
+
+        public static GroupPoolDto fromEntity(pi.db.piversionbd.entities.groups.GroupPool p) {
+            if (p == null) return null;
+            Long gid = p.getGroup() != null ? p.getGroup().getId() : null;
+            float balance = p.getPoolBalance() != null ? p.getPoolBalance() : 0f;
+            float contributions = p.getTotalContributions() != null ? p.getTotalContributions() : 0f;
+            float paidOut = p.getTotalPaidOut() != null ? p.getTotalPaidOut() : 0f;
+            return new GroupPoolDto(gid, balance, contributions, paidOut, p.getUpdatedAt(), p.isLowBalance());
+        }
+
+        /** For a group that has no pool record yet (no payments). */
+        public static GroupPoolDto empty(Long groupId) {
+            return new GroupPoolDto(groupId, 0f, 0f, 0f, null, false);
+        }
+    }
+
+    // ----- Group change request (admin approval flow) -----
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "Request to change group. When member already in another group, a PENDING request is created; admin approves then member can complete the switch.")
+    public static class GroupChangeRequestDto {
+
+        @Schema(description = "Request ID.", example = "1", accessMode = Schema.AccessMode.READ_ONLY)
+        private Long requestId;
+
+        @Schema(description = "Member ID.", example = "1")
+        private Long memberId;
+
+        @Schema(description = "Current group ID (member will leave).", example = "1")
+        private Long fromGroupId;
+
+        @Schema(description = "Target group ID (member wants to join).", example = "2")
+        private Long toGroupId;
+
+        @Schema(description = "Status: pending, approved, rejected, completed.", example = "pending", allowableValues = {"pending", "approved", "rejected", "completed"})
+        private String status;
+
+        @Schema(description = "When the request was created.")
+        private java.time.Instant createdAt;
+
+        @Schema(description = "When admin reviewed (approved/rejected).")
+        private java.time.Instant reviewedAt;
+
+        @Schema(description = "Requested package type for the new membership.", example = "BASIC")
+        private String requestedPackageType;
+
+        public static GroupChangeRequestDto fromEntity(pi.db.piversionbd.entities.groups.GroupChangeRequest r) {
+            if (r == null) return null;
+            return new GroupChangeRequestDto(
+                    r.getId(),
+                    r.getMember() != null ? r.getMember().getId() : null,
+                    r.getFromGroup() != null ? r.getFromGroup().getId() : null,
+                    r.getToGroup() != null ? r.getToGroup().getId() : null,
+                    r.getStatus(),
+                    r.getCreatedAt(),
+                    r.getReviewedAt(),
+                    r.getRequestedPackageType()
             );
         }
     }

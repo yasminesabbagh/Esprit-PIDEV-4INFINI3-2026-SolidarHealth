@@ -7,31 +7,29 @@ import java.util.List;
 
 /**
  * On successful payment: create payment record, update group pool, set membership to active.
- * Monthly payments: verify member in group, 70/20/10 split, update pool; payment history.
+ * Payment amount is always taken from the membership's monthly amount (based on the member's
+ * chosen package: BASIC, CONFORT, PREMIUM and their subscription prices).
  */
 public interface IPaymentService {
 
     /**
-     * Record a successful payment for a membership. Creates the payment record,
-     * updates the group's pool (balance and total contributions), and sets the
-     * membership status to active.
+     * Record a successful first payment for a membership. Uses the membership's monthly amount
+     * (from the chosen package) and applies 70% pool / 20% platform / 10% national fund.
+     * Creates the payment record, updates the group pool, and sets the membership status to active.
      *
      * @param membershipId the membership this payment is for (must be pending)
-     * @param amount       total amount paid
-     * @param poolAllocation amount added to group pool (can be null, treated as 0)
-     * @param platformFee  platform fee (can be null, treated as 0)
-     * @param nationalFund national fund contribution (can be null, treated as 0)
      * @return the updated membership (status set to active)
      */
-    Membership recordSuccessfulPayment(Long membershipId, Float amount, Float poolAllocation, Float platformFee, Float nationalFund);
+    Membership recordSuccessfulPayment(Long membershipId);
 
     /**
-     * Process a monthly premium payment: verify member is in group, calculate 70/20/10 splits,
-     * create payment record, update group pool. Amount should match membership's monthly amount.
+     * Process a monthly premium payment. Uses the membership's monthly amount (from the member's
+     * chosen package: BASIC, CONFORT, PREMIUM). Splits: 70% pool, 20% platform, 10% national fund.
+     * Creates payment record and updates group pool.
      *
      * @return the created payment (confirmation)
      */
-    Payment processMonthlyPayment(Long memberId, Long groupId, Float amount);
+    Payment processMonthlyPayment(Long memberId, Long groupId);
 
     /**
      * Get payment history for a member, optionally filtered by group.

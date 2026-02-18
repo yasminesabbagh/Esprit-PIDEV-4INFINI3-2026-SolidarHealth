@@ -13,7 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pi.db.piversionbd.dto.groups.GroupsModuleDto;
 import pi.db.piversionbd.entities.groups.Group;
-import pi.db.piversionbd.entities.groups.Membership;
+import pi.db.piversionbd.repository.groups.GroupPoolRepository;
+import pi.db.piversionbd.service.groups.IMembershipService.AddMembershipResult;
 import pi.db.piversionbd.service.groups.IGroupService;
 import pi.db.piversionbd.service.groups.IMembershipService;
 
@@ -28,6 +29,7 @@ public class GroupController {
 
     private final IGroupService groupService;
     private final IMembershipService membershipService;
+    private final GroupPoolRepository groupPoolRepository;
 
     @GetMapping
     @Operation(summary = "List all groups", description = "Optional filter by type (query param with dropdown).")
@@ -36,23 +38,6 @@ public class GroupController {
             @Parameter(description = "Filter by group type. Placeholder: FAMILY. Available values: FAMILY, STUDENTS, WORKERS, MIXED", schema = @Schema(allowableValues = { "FAMILY", "STUDENTS", "WORKERS", "MIXED" }, example = "FAMILY"))
             @RequestParam(required = false) String type) {
         List<Group> groups = type != null && !type.isBlank() ? groupService.getAllGroups(type) : groupService.getAllGroups();
-        List<GroupsModuleDto.GroupDto> list = groups.stream()
-                .map(GroupsModuleDto.GroupDto::fromEntity)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(list);
-    }
-
-    @GetMapping("/suggestions")
-    @Operation(
-            summary = "Get group suggestions for a member",
-            description = "Returns groups that match the member's criteria: same region, group type compatible with profession, and group not full. Rule-based for now; can be replaced with ML/AI matching later. Age and packageType are accepted for future use.")
-    @ApiResponse(responseCode = "200", description = "OK – list of matching groups")
-    public ResponseEntity<List<GroupsModuleDto.GroupDto>> getSuggestions(
-            @Parameter(description = "Member age (for future age-range matching)") @RequestParam(required = false) Integer age,
-            @Parameter(description = "Profession (e.g. student, worker) – maps to group type: students→STUDENTS, workers→WORKERS, family→FAMILY") @RequestParam(required = false) String profession,
-            @Parameter(description = "Region – only groups in this region") @RequestParam(required = false) String region,
-            @Parameter(description = "Package type (for future use)", schema = @Schema(allowableValues = { "BASIC", "CONFORT", "PREMIUM" })) @RequestParam(required = false) String packageType) {
-        List<Group> groups = groupService.getGroupSuggestions(age, profession, region, packageType);
         List<GroupsModuleDto.GroupDto> list = groups.stream()
                 .map(GroupsModuleDto.GroupDto::fromEntity)
                 .collect(Collectors.toList());
@@ -71,23 +56,67 @@ public class GroupController {
         return ResponseEntity.ok(GroupsModuleDto.GroupDto.fromEntity(group));
     }
 
+    @GetMapping("/{groupId}/pool")
+    @Operation(summary = "Get group pool", description = "Returns the group's solidarity pool: exact balance, total contributions, total paid out, and when it was last updated (e.g. when a payment was applied).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK – pool data (amounts and updatedAt)"),
+            @ApiResponse(responseCode = "404", description = "Group not found", content = @Content(mediaType = "text/plain"))
+    })
+    public ResponseEntity<GroupsModuleDto.GroupPoolDto> getPool(
+            @Parameter(description = "Group ID. Placeholder: 1", required = true, schema = @Schema(example = "1")) @PathVariable Long groupId) {
+        groupService.getGroupById(groupId); // 404 if group missing
+        GroupsModuleDto.GroupPoolDto dto = groupPoolRepository.findByGroup_Id(groupId)
+                .map(GroupsModuleDto.GroupPoolDto::fromEntity)
+                .orElse(GroupsModuleDto.GroupPoolDto.empty(groupId));
+        return ResponseEntity.ok(dto);
+    }
+
     @PostMapping
-    @Operation(summary = "Create a new group", description = "Fill each parameter; each has its own placeholder.")
+    @Operation(
+            summary = "Create a new group",
+            description = "Creates a public or private group. Private groups get an invite_code that the creator can share (QR). currentMemberCount is managed automatically.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Group created"),
             @ApiResponse(responseCode = "400", description = "name required")
     })
     public ResponseEntity<GroupsModuleDto.GroupDto> create(
-            @Parameter(description = "Group name. Placeholder: Family Solidarity 42", required = true, schema = @Schema(example = "Family Solidarity 42")) @RequestParam String name,
-            @Parameter(description = "Group type. Placeholder: FAMILY. Available values: FAMILY, STUDENTS, WORKERS, MIXED", schema = @Schema(allowableValues = { "FAMILY", "STUDENTS", "WORKERS", "MIXED" }, example = "FAMILY")) @RequestParam(required = false) String type,
-            @Parameter(description = "Region / city. Placeholder: Tunis", schema = @Schema(example = "Tunis")) @RequestParam(required = false) String region,
-            @Parameter(description = "Minimum members. Placeholder: 5", schema = @Schema(example = "5")) @RequestParam(required = false) Integer minMembers,
-            @Parameter(description = "Maximum members. Placeholder: 15", schema = @Schema(example = "15")) @RequestParam(required = false) Integer maxMembers,
-            @Parameter(description = "Current member count. Placeholder: 0", schema = @Schema(example = "0")) @RequestParam(required = false) Integer currentMemberCount) {
-        GroupsModuleDto.GroupDto dto = new GroupsModuleDto.GroupDto(null, name, type, region, minMembers, maxMembers, currentMemberCount);
-        Group group = toEntity(dto);
+            @Parameter(
+                    description = "Group name. Placeholder: Family Solidarity 42",
+                    required = true,
+                    schema = @Schema(example = "Family Solidarity 42"))
+            @RequestParam String name,
+            @Parameter(
+                    description = "Group type. Placeholder: FAMILY. Available values: FAMILY, STUDENTS, WORKERS, MIXED",
+                    schema = @Schema(allowableValues = {"FAMILY", "STUDENTS", "WORKERS", "MIXED"}, example = "FAMILY"))
+            @RequestParam(required = false) String type,
+            @Parameter(
+                    description = "Region / city. Placeholder: Tunis",
+                    schema = @Schema(example = "Tunis"))
+            @RequestParam(required = false) String region,
+            @Parameter(
+                    description = "Minimum members. Placeholder: 5",
+                    schema = @Schema(example = "5"))
+            @RequestParam(required = false) Integer minMembers,
+            @Parameter(
+                    description = "Maximum members. Placeholder: 15",
+                    schema = @Schema(example = "15"))
+            @RequestParam(required = false) Integer maxMembers,
+            @Parameter(
+                    description = "Join policy. Placeholder: public. Available values: public, private",
+                    schema = @Schema(allowableValues = {"public", "private"}, example = "public"))
+            @RequestParam(required = false) String joinPolicy) {
+
+        Group group = new Group();
+        group.setName(name);
+        group.setType(type);
+        group.setRegion(region);
+        group.setMinMembers(minMembers);
+        group.setMaxMembers(maxMembers);
+        group.setJoinPolicy(joinPolicy);
+
         Group created = groupService.createGroup(group);
-        return ResponseEntity.status(HttpStatus.CREATED).body(GroupsModuleDto.GroupDto.fromEntity(created));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(GroupsModuleDto.GroupDto.fromEntity(created));
     }
 
     @PutMapping("/{groupId}")
@@ -98,26 +127,38 @@ public class GroupController {
             @ApiResponse(responseCode = "404", description = "Group not found", content = @Content(mediaType = "text/plain", schema = @Schema(example = "Group not found with id 99")))
     })
     public ResponseEntity<GroupsModuleDto.GroupDto> update(
-            @Parameter(description = "Group ID. Placeholder: 1", required = true, schema = @Schema(example = "1")) @PathVariable Long groupId,
-            @Parameter(description = "Group name. Placeholder: Family Solidarity 42", schema = @Schema(example = "Family Solidarity 42")) @RequestParam(required = false) String name,
-            @Parameter(description = "Group type. Placeholder: FAMILY. Available values: FAMILY, STUDENTS, WORKERS, MIXED", schema = @Schema(allowableValues = { "FAMILY", "STUDENTS", "WORKERS", "MIXED" }, example = "FAMILY")) @RequestParam(required = false) String type,
-            @Parameter(description = "Region / city. Placeholder: Tunis", schema = @Schema(example = "Tunis")) @RequestParam(required = false) String region,
-            @Parameter(description = "Minimum members. Placeholder: 5", schema = @Schema(example = "5")) @RequestParam(required = false) Integer minMembers,
-            @Parameter(description = "Maximum members. Placeholder: 15", schema = @Schema(example = "15")) @RequestParam(required = false) Integer maxMembers,
-            @Parameter(description = "Current member count. Placeholder: 0", schema = @Schema(example = "0")) @RequestParam(required = false) Integer currentMemberCount) {
-        Group existing = groupService.getGroupById(groupId);
-        boolean noParamsSent = name == null && type == null && region == null && minMembers == null && maxMembers == null && currentMemberCount == null;
+            @Parameter(description = "Group ID. Placeholder: 1", required = true, schema = @Schema(example = "1"))
+            @PathVariable Long groupId,
+            @Parameter(description = "Group name. Placeholder: Family Solidarity 42", schema = @Schema(example = "Family Solidarity 42"))
+            @RequestParam(required = false) String name,
+            @Parameter(description = "Group type. Placeholder: FAMILY. Available values: FAMILY, STUDENTS, WORKERS, MIXED",
+                    schema = @Schema(allowableValues = {"FAMILY", "STUDENTS", "WORKERS", "MIXED"}, example = "FAMILY"))
+            @RequestParam(required = false) String type,
+            @Parameter(description = "Region / city. Placeholder: Tunis", schema = @Schema(example = "Tunis"))
+            @RequestParam(required = false) String region,
+            @Parameter(description = "Minimum members. Placeholder: 5", schema = @Schema(example = "5"))
+            @RequestParam(required = false) Integer minMembers,
+            @Parameter(description = "Maximum members. Placeholder: 15", schema = @Schema(example = "15"))
+            @RequestParam(required = false) Integer maxMembers,
+            @Parameter(description = "Join policy. Placeholder: public. Available values: public, private",
+                    schema = @Schema(allowableValues = {"public", "private"}, example = "public"))
+            @RequestParam(required = false) String joinPolicy) {
+
+        boolean noParamsSent = name == null && type == null && region == null
+                && minMembers == null && maxMembers == null && joinPolicy == null;
         if (noParamsSent) {
             return ResponseEntity.badRequest().build();
         }
-        String newName = name != null ? name : existing.getName();
-        String newType = type != null ? type : existing.getType();
-        String newRegion = region != null ? region : existing.getRegion();
-        Integer newMin = minMembers != null ? minMembers : existing.getMinMembers();
-        Integer newMax = maxMembers != null ? maxMembers : existing.getMaxMembers();
-        Integer newCount = currentMemberCount != null ? currentMemberCount : existing.getCurrentMemberCount();
-        GroupsModuleDto.GroupDto dto = new GroupsModuleDto.GroupDto(groupId, newName, newType, newRegion, newMin, newMax, newCount);
-        Group group = groupService.updateGroup(groupId, toEntity(dto));
+
+        Group updated = new Group();
+        updated.setName(name);
+        updated.setType(type);
+        updated.setRegion(region);
+        updated.setMinMembers(minMembers);
+        updated.setMaxMembers(maxMembers);
+        updated.setJoinPolicy(joinPolicy);
+
+        Group group = groupService.updateGroup(groupId, updated);
         return ResponseEntity.ok(GroupsModuleDto.GroupDto.fromEntity(group));
     }
 
@@ -136,19 +177,26 @@ public class GroupController {
     // ----- Membership operations (groups & payments after member is approved) -----
 
     @PostMapping("/{groupId}/members")
-    @Operation(summary = "Create membership – add member to group", description = "Creates a membership linking the member and group. Use groupId (path), memberId and packageType (query). monthly_amount is taken from the member's personalized_monthly_price.")
+    @Operation(summary = "Create membership – add member to group",
+            description = "Creates a membership, or a group-change request if the member is already in another group (admin must approve; then member retries). "
+                    + "Use groupId (path), memberId and packageType (query).")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Membership created"),
-            @ApiResponse(responseCode = "400", description = "memberId required, or member already in group"),
+            @ApiResponse(responseCode = "202", description = "Member already in another group: group-change request created; wait for admin approval, then retry"),
+            @ApiResponse(responseCode = "400", description = "memberId required, member already in group, or pending request already exists"),
             @ApiResponse(responseCode = "404", description = "Group or member not found")
     })
-    public ResponseEntity<GroupsModuleDto.MembershipDto> createMembership(
+    public ResponseEntity<?> createMembership(
             @Parameter(description = "Group ID. Placeholder: 1", required = true, schema = @Schema(example = "1")) @PathVariable Long groupId,
             @Parameter(description = "Member ID (current member). Placeholder: 3", required = true, schema = @Schema(example = "3")) @RequestParam Long memberId,
             @Parameter(description = "Package type. Placeholder: BASIC. Available values: BASIC, CONFORT, PREMIUM", schema = @Schema(allowableValues = { "BASIC", "CONFORT", "PREMIUM" }, example = "BASIC")) @RequestParam(required = false) String packageType) {
-        Membership membership = membershipService.addMemberToGroup(groupId, memberId, packageType);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(GroupsModuleDto.MembershipDto.fromEntity(membership));
+        AddMembershipResult result = membershipService.addMemberToGroup(groupId, memberId, packageType);
+        if (result.getMembership() != null) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(GroupsModuleDto.MembershipDto.fromEntity(result.getMembership()));
+        }
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(GroupsModuleDto.GroupChangeRequestDto.fromEntity(result.getGroupChangeRequest()));
     }
 
     @DeleteMapping("/{groupId}/members/{memberId}")
@@ -164,15 +212,5 @@ public class GroupController {
         membershipService.removeMemberFromGroup(groupId, memberId);
     }
 
-    private static Group toEntity(GroupsModuleDto.GroupDto dto) {
-        Group g = new Group();
-        g.setId(dto.getGroupId());
-        g.setName(dto.getName());
-        g.setType(dto.getType());
-        g.setRegion(dto.getRegion());
-        g.setMinMembers(dto.getMinMembers());
-        g.setMaxMembers(dto.getMaxMembers());
-        g.setCurrentMemberCount(dto.getCurrentMemberCount());
-        return g;
-    }
+    // No toEntity helper needed; create/update build Group directly from request params.
 }

@@ -90,11 +90,10 @@ public class MemberController {
     }
 
     @PostMapping
-    @Operation(summary = "Create a new member", description = "Member form after acceptance: CIN from pre-registration; member fills age, profession, region; then chooses package and pays. Each param has its own placeholder.")
+    @Operation(summary = "Create a new member", description = "Member form after acceptance: CIN from pre-registration; member fills age, profession, region. Group is not set here — add the member to a group later via membership (POST /api/groups/{groupId}/members).")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Member created"),
             @ApiResponse(responseCode = "400", description = "cinNumber required"),
-            @ApiResponse(responseCode = "404", description = "Group not found when currentGroupId is set", content = @Content(mediaType = "text/plain", schema = @Schema(example = "Group not found with id 99"))),
             @ApiResponse(responseCode = "409", description = "CIN number already in use", content = @Content(mediaType = "text/plain", schema = @Schema(example = "CIN number already in use: 12345678")))
     })
     public ResponseEntity<GroupsModuleDto.MemberDto> create(
@@ -103,11 +102,9 @@ public class MemberController {
             @Parameter(description = "Profession (e.g. student, worker). Placeholder: student", schema = @Schema(example = "student")) @RequestParam(required = false) String profession,
             @Parameter(description = "Region. Placeholder: Tunis", schema = @Schema(example = "Tunis")) @RequestParam(required = false) String region,
             @Parameter(description = "Personalized monthly premium (DT). Placeholder: 17.5", schema = @Schema(example = "17.5")) @RequestParam(required = false) Float personalizedMonthlyPrice,
-            @Parameter(description = "Adherence score (0-100). Placeholder: 85", schema = @Schema(example = "85")) @RequestParam(required = false) Float adherenceScore,
-            @Parameter(description = "Current group ID. Placeholder: 1", schema = @Schema(example = "1")) @RequestParam(required = false) Long currentGroupId) {
-        GroupsModuleDto.MemberDto dto = new GroupsModuleDto.MemberDto(null, cinNumber, age, profession, region, personalizedMonthlyPrice, adherenceScore, currentGroupId);
+            @Parameter(description = "Adherence score (0-100). Placeholder: 85", schema = @Schema(example = "85")) @RequestParam(required = false) Float adherenceScore) {
+        GroupsModuleDto.MemberDto dto = new GroupsModuleDto.MemberDto(null, cinNumber, age, profession, region, personalizedMonthlyPrice, adherenceScore, null);
         Member member = toEntity(dto);
-        memberService.resolveCurrentGroup(member, currentGroupId);
         Member created = memberService.createMember(member);
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupsModuleDto.MemberDto.fromEntity(created));
     }
