@@ -58,45 +58,6 @@ public class AdminUserController {
     }
 
     /**
-     * Authentifie un admin par username + password.
-     */
-    @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        try {
-            if (request.getUsername() == null || request.getUsername().isBlank()) {
-                return badRequest("Username requis");
-            }
-            if (request.getPassword() == null || request.getPassword().isBlank()) {
-                return badRequest("Mot de passe requis");
-            }
-            AdminUser user = adminUserService.login(request.getUsername(), request.getPassword());
-            return ResponseEntity.ok(AdminUserResponse.from(user));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error(e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error("Erreur interne"));
-        }
-    }
-
-    /**
-     * Réinitialise le mot de passe d'un admin via son email.
-     */
-    @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
-        try {
-            if (request.getEmail() == null || request.getEmail().isBlank()) {
-                return badRequest("Email requis");
-            }
-            adminUserService.resetPassword(request.getEmail());
-            return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error(e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error("Erreur interne"));
-        }
-    }
-
-    /**
      * Recherche par nom (contient, ignore case) et filtrage par rôle.
      * Ex: /api/admin/users/search?namePart=yas&role=ADMIN
      */
@@ -144,16 +105,6 @@ public class AdminUserController {
         private String password;
     }
 
-    @Data
-    public static class LoginRequest {
-        private String username;
-        private String password;
-    }
-
-    @Data
-    public static class ForgotPasswordRequest {
-        private String email;
-    }
 
     @Data
     public static class AdminUserResponse {

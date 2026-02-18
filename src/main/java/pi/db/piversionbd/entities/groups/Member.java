@@ -15,6 +15,7 @@ import pi.db.piversionbd.entities.score.AdherenceTracking;
 import pi.db.piversionbd.entities.score.Claim;
 import pi.db.piversionbd.entities.score.MemberReward;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
@@ -26,6 +27,7 @@ public class Member {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Identité métier existante
     @Column(name = "cin_number", nullable = false)
     private String cinNumber;
 
@@ -34,6 +36,28 @@ public class Member {
 
     @Column(name = "adherence_score")
     private Float adherenceScore;
+
+    // Champs d'authentification
+    @Column(unique = true)
+    private String email;
+
+    @Column
+    private String password;
+
+    @Column
+    private Boolean enabled = true;
+
+    @Column(name = "failed_login_attempts")
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name = "locked_at")
+    private LocalDateTime lockedAt;
+
+    @Column(name = "last_login")
+    private LocalDateTime lastLogin;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 
     @ManyToOne
     @JoinColumn(name = "current_group_id")
@@ -85,4 +109,3 @@ public class Member {
     @OneToMany(mappedBy = "creator")
     private List<Group> createdGroups;
 }
-
