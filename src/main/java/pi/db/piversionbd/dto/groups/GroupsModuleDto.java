@@ -156,6 +156,15 @@ public final class GroupsModuleDto {
         @Schema(description = "Personalized monthly premium (DT). Placeholder: 17.5", example = "17.5")
         private Float personalizedMonthlyPrice;
 
+        @Schema(description = "Price for BASIC package (from preinscription). Use when creating membership with packageType=BASIC.", example = "25.0")
+        private Float priceBasic;
+
+        @Schema(description = "Price for CONFORT package (from preinscription). Use when creating membership with packageType=CONFORT.", example = "32.5")
+        private Float priceConfort;
+
+        @Schema(description = "Price for PREMIUM package (from preinscription). Use when creating membership with packageType=PREMIUM.", example = "40.0")
+        private Float pricePremium;
+
         @Schema(description = "Adherence score (0-100). Placeholder: 85", example = "85", minimum = "0", maximum = "100")
         private Float adherenceScore;
 
@@ -171,6 +180,9 @@ public final class GroupsModuleDto {
                     m.getProfession(),
                     m.getRegion(),
                     m.getPersonalizedMonthlyPrice(),
+                    m.getPriceBasic(),
+                    m.getPriceConfort(),
+                    m.getPricePremium(),
                     m.getAdherenceScore(),
                     m.getCurrentGroup() != null ? m.getCurrentGroup().getId() : null
             );
@@ -216,7 +228,7 @@ public final class GroupsModuleDto {
                     m.getId(),
                     m.getMember() != null ? m.getMember().getId() : null,
                     m.getGroup() != null ? m.getGroup().getId() : null,
-                    m.getPackageType(),
+                    m.getPackageType() != null ? m.getPackageType().name() : null,
                     m.getMonthlyAmount(),
                     m.getConsultationsLimit(),
                     m.getAnnualLimit(),

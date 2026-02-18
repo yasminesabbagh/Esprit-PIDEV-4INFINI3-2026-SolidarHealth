@@ -8,6 +8,7 @@ import pi.db.piversionbd.entities.groups.Member;
 import pi.db.piversionbd.entities.pre.PreRegistration;
 import pi.db.piversionbd.exception.DuplicateCinException;
 import pi.db.piversionbd.exception.ResourceNotFoundException;
+import pi.db.piversionbd.repository.RiskAssessmentRepository;
 import pi.db.piversionbd.repository.groups.GroupRepository;
 import pi.db.piversionbd.repository.groups.MemberRepository;
 import pi.db.piversionbd.repository.pre.PreRegistrationRepository;
@@ -19,9 +20,12 @@ import java.util.List;
 @Transactional
 public class MemberServiceImp implements IMemberService {
 
+    private static final float MAX_MONTHLY_PRICE = 70.0f;
+
     private final MemberRepository memberRepository;
     private final GroupRepository groupRepository;
     private final PreRegistrationRepository preRegistrationRepository;
+    private final RiskAssessmentRepository riskAssessmentRepository;
 
     @Override
     public List<Member> getAllMembers() {
@@ -46,13 +50,24 @@ public class MemberServiceImp implements IMemberService {
         if (member.getCinNumber() == null || member.getCinNumber().isBlank()) {
             throw new IllegalArgumentException("cinNumber is required");
         }
-        // CIN must exist in PreRegistration (accepted in module 5). If not found, deny creation.
+        // CIN must exist in PreRegistration (module 5). If not found, deny creation.
         PreRegistration pre = preRegistrationRepository.findByCinNumber(member.getCinNumber())
                 .orElseThrow(() -> new ResourceNotFoundException("CIN number doesn't exist in PreRegistration: " + member.getCinNumber()));
         member.setPreRegistration(pre);
         if (member.getCinNumber() != null && memberRepository.existsByCinNumber(member.getCinNumber())) {
             throw new DuplicateCinException("CIN number already in use: " + member.getCinNumber());
         }
+        // Set prices from preinscription (RiskAssessment) so member can choose BASIC/CONFORT/PREMIUM when creating membership
+        float basePrice = riskAssessmentRepository.findByPreRegistration_Id(pre.getId()).stream()
+                .findFirst()
+                .map(pi.db.piversionbd.entities.pre.RiskAssessment::getCalculatedPrice)
+                .orElse(25.0f);
+        if (member.getPersonalizedMonthlyPrice() == null) {
+            member.setPersonalizedMonthlyPrice(basePrice);
+        }
+        member.setPriceBasic(Math.min(MAX_MONTHLY_PRICE, basePrice));
+        member.setPriceConfort(Math.min(MAX_MONTHLY_PRICE, basePrice * 1.3f));
+        member.setPricePremium(Math.min(MAX_MONTHLY_PRICE, basePrice * 1.6f));
         return memberRepository.save(member);
     }
 

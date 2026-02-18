@@ -103,7 +103,7 @@ public class MemberController {
             @Parameter(description = "Region. Placeholder: Tunis", schema = @Schema(example = "Tunis")) @RequestParam(required = false) String region,
             @Parameter(description = "Personalized monthly premium (DT). Placeholder: 17.5", schema = @Schema(example = "17.5")) @RequestParam(required = false) Float personalizedMonthlyPrice,
             @Parameter(description = "Adherence score (0-100). Placeholder: 85", schema = @Schema(example = "85")) @RequestParam(required = false) Float adherenceScore) {
-        GroupsModuleDto.MemberDto dto = new GroupsModuleDto.MemberDto(null, cinNumber, age, profession, region, personalizedMonthlyPrice, adherenceScore, null);
+        GroupsModuleDto.MemberDto dto = new GroupsModuleDto.MemberDto(null, cinNumber, age, profession, region, personalizedMonthlyPrice, null, null, null, adherenceScore, null);
         Member member = toEntity(dto);
         Member created = memberService.createMember(member);
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupsModuleDto.MemberDto.fromEntity(created));
@@ -135,7 +135,7 @@ public class MemberController {
         Float newPrice = personalizedMonthlyPrice != null ? personalizedMonthlyPrice : existing.getPersonalizedMonthlyPrice();
         Float newScore = adherenceScore != null ? adherenceScore : existing.getAdherenceScore();
         Long newGroupId = currentGroupId != null ? currentGroupId : (existing.getCurrentGroup() != null ? existing.getCurrentGroup().getId() : null);
-        GroupsModuleDto.MemberDto dto = new GroupsModuleDto.MemberDto(memberId, existing.getCinNumber(), newAge, newProfession, newRegion, newPrice, newScore, newGroupId);
+        GroupsModuleDto.MemberDto dto = new GroupsModuleDto.MemberDto(memberId, existing.getCinNumber(), newAge, newProfession, newRegion, newPrice, existing.getPriceBasic(), existing.getPriceConfort(), existing.getPricePremium(), newScore, newGroupId);
         Member member = toEntity(dto);
         memberService.resolveCurrentGroup(member, newGroupId);
         Member updated = memberService.updateMember(memberId, member);
@@ -177,6 +177,9 @@ public class MemberController {
         m.setProfession(dto.getProfession());
         m.setRegion(dto.getRegion());
         m.setPersonalizedMonthlyPrice(dto.getPersonalizedMonthlyPrice());
+        m.setPriceBasic(dto.getPriceBasic());
+        m.setPriceConfort(dto.getPriceConfort());
+        m.setPricePremium(dto.getPricePremium());
         m.setAdherenceScore(dto.getAdherenceScore());
         return m;
     }

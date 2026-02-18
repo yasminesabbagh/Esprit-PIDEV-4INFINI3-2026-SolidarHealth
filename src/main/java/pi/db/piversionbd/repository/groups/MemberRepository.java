@@ -14,4 +14,5 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     boolean existsByCinNumber(String cinNumber);
 
     boolean existsByCinNumberAndIdNot(String cinNumber, Long id);
+
 }

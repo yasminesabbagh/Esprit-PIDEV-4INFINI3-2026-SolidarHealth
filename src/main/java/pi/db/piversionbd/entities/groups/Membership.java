@@ -46,8 +46,9 @@ public class Membership {
     @JoinColumn(name = "group_id")
     private Group group;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "package_type")
-    private String packageType;
+    private PackageType packageType;
 
     @Column(name = "monthly_amount")
     private Float monthlyAmount;
@@ -90,21 +91,25 @@ public class Membership {
             // If we don't know the package or amount, leave coverage unset.
             return;
         }
-        String pkg = packageType.toUpperCase();
 
         float baseMonthly;
         float baseAnnual;
         int baseConsultations;
-        switch (pkg) {
-            case "CONFORT" -> {
+        switch (packageType) {
+            case CONFORT -> {
                 baseMonthly = CONFORT_BASE_MONTHLY;
                 baseAnnual = CONFORT_BASE_ANNUAL_LIMIT;
                 baseConsultations = CONFORT_BASE_CONSULTATIONS;
             }
-            case "PREMIUM" -> {
+            case PREMIUM -> {
                 baseMonthly = PREMIUM_BASE_MONTHLY;
                 baseAnnual = PREMIUM_BASE_ANNUAL_LIMIT;
                 baseConsultations = PREMIUM_BASE_CONSULTATIONS;
+            }
+            case BASIC -> {
+                baseMonthly = BASIC_BASE_MONTHLY;
+                baseAnnual = BASIC_BASE_ANNUAL_LIMIT;
+                baseConsultations = BASIC_BASE_CONSULTATIONS;
             }
             default -> {
                 baseMonthly = BASIC_BASE_MONTHLY;

@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pi.db.piversionbd.entities.groups.Group;
+import pi.db.piversionbd.entities.groups.PackageType;
 import pi.db.piversionbd.entities.groups.Member;
 import pi.db.piversionbd.entities.groups.Membership;
 import pi.db.piversionbd.exception.ResourceNotFoundException;
@@ -116,12 +117,19 @@ public class MembershipServiceImp implements IMembershipService {
             throw new IllegalArgumentException("Group is full (maxMembers=" + max + ")");
         }
 
-        String pkg = packageType != null && !packageType.isBlank() ? packageType.trim().toUpperCase() : DEFAULT_PACKAGE;
+        String pkgRaw = packageType != null && !packageType.isBlank() ? packageType.trim() : DEFAULT_PACKAGE;
+        PackageType pkgType;
+        try {
+            pkgType = PackageType.from(pkgRaw);
+        } catch (IllegalArgumentException ex) {
+            pkgType = PackageType.BASIC;
+        }
+        String pkgNormalized = pkgType.name();
         Membership m = new Membership();
         m.setMember(member);
         m.setGroup(group);
-        m.setPackageType(pkg);
-        m.setMonthlyAmount(getMonthlyAmountForPackage(member, pkg));
+        m.setPackageType(pkgType);
+        m.setMonthlyAmount(getMonthlyAmountForPackage(member, pkgNormalized));
         // Derive consultations_limit and annual_limit dynamically from package + personalized monthly amount
         m.applyPersonalizedCoverage();
         m.setStatus(Membership.STATUS_PENDING);
